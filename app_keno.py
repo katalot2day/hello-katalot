@@ -2,6 +2,8 @@ import sqlite3
 import pandas as pd
 import streamlit as st
 
+#hungtv
+
 DB_PATH = "katalot.db"
 
 st.set_page_config(page_title="Kết quả Keno", page_icon="🎱", layout="wide")
@@ -160,15 +162,18 @@ with tab2:
             html  += f'<td class="col-label">{t_key}</td>'
             for b in B_COLS:
                 sl = parsed[b].get(t_num, 0)
-                if not has_dmgt(t_key, b):
-                    # Ô không hợp lệ theo DMGT → trắng
-                    html += '<td class="cell-white"></td>'
-                elif is_t05:
-                    # Hàng T05 → cam
+                b_num = int(b.replace("b", ""))  # b10->10, b02->2
+                is_diagonal = (b_num == t_num)
+
+                if is_diagonal and is_t05:
+                    # B05-T05 luôn cam dù có số hay không
                     html += f'<td class="cell-orange">{sl if sl > 0 else ""}</td>'
-                else:
-                    # Ô hợp lệ → vàng
+                elif is_diagonal:
+                    # Đường chéo → vàng
                     html += f'<td class="cell-yellow">{sl if sl > 0 else ""}</td>'
+                else:
+                    # Ngoài đường chéo → trắng
+                    html += '<td class="cell-white"></td>'
             html += '</tr>'
 
     html += '</table>'
