@@ -198,8 +198,10 @@ if __name__ == "__main__":
         print("DB da cap nhat day du, khong co ky moi.")
         exit(0)
 
-    new_count = latest_site - (latest_db if latest_db else 276299)
+    START_KY = 276330  # Ky bat dau lay du lieu
+
+    new_count = latest_site - (latest_db if latest_db else START_KY - 1)
     print(f"  Can fetch them: {new_count} ky\n")
 
-    start = (latest_db + 1) if latest_db else 276300
+    start = max((latest_db + 1) if latest_db else START_KY, START_KY)
     run(start, latest_site)
