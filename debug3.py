@@ -1,0 +1,1 @@
+import sqlite3; conn=sqlite3.connect('katalot.db'); rows=conn.execute('SELECT ky, n20, b10 FROM KQKENO WHERE ky IN (276338, 276339)').fetchall(); [print(r) for r in rows]; conn.close()
