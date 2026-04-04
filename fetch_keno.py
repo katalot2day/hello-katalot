@@ -98,13 +98,19 @@ def fetch_keno(ky_so):
 
         soup = BeautifulSoup(res.text, "html.parser")
 
-        # Lay 20 so ket qua
+        # Lay 20 so ket qua - chi lay so khong trung, theo thu tu xuat hien
+        # Dung fallback: lay 20 so dau tien unique trong range 1-80
+        # Bo qua cac so Chan/Le/Lon/Nho (xuat hien sau 20 so ket qua)
         numbers = []
+        seen = set()
         for tag in soup.find_all(string=re.compile(r'^\d{2}$')):
             n = int(tag.strip())
-            if 1 <= n <= 80:
+            if 1 <= n <= 80 and n not in seen:
+                seen.add(n)
                 numbers.append(n)
-        numbers = sorted(set(numbers))
+                if len(numbers) == 20:
+                    break
+        numbers = sorted(numbers)
 
         if len(numbers) != 20:
             print(f"  Ky {ky_so}: parse duoc {len(numbers)} so (can 20)")
