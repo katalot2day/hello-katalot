@@ -7,3 +7,4 @@ tables = soup.find_all('table')
 print(f'So bang: {len(tables)}')
 for i, t in enumerate(tables):
     print(f'Bang {i}: {t.get_text(strip=True)[:80]}')
+    
