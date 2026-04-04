@@ -28,17 +28,16 @@ if df is None or df.empty:
     st.error("Không đọc được DB. Hãy chạy `python fetch_keno.py` trước.")
     st.stop()
 
-# ── Build DMGT lookup dict: dmgt_map[trung][bxx] = so_tien ──────────────────
+# DMGT lookup
 dmgt_map = {}
 for _, row in dmgt.iterrows():
-    trung = row["trung"]  # T10, T09, ...
+    trung = row["trung"]
     dmgt_map[trung] = {f"b{i:02d}": row[f"b{i:02d}"] for i in range(1, 11)}
 
 B_COLS = [f"b{i:02d}" for i in range(10, 0, -1)]
-T_ROWS = [f"T{i:02d}" for i in range(10, -1, -1)]
+T_ROWS = [f"T{i:02d}" for i in range(10, 0, -1)]  # T10→T01
 
 def parse_bxx(s):
-    """Parse "10-03,09-00,..." -> dict {so_trung: so_luong}"""
     result = {}
     if not s:
         return result
@@ -49,7 +48,6 @@ def parse_bxx(s):
     return result
 
 def calc_tien_bxx(parsed, b_col):
-    """Tính tổng tiền 1 cột Bxx = sum(so_luong × dinh_muc)"""
     total = 0
     for so_trung, so_luong in parsed.items():
         t_key = f"T{so_trung:02d}"
@@ -58,7 +56,10 @@ def calc_tien_bxx(parsed, b_col):
             total += so_luong * dm
     return total
 
-# ── Metrics ──────────────────────────────────────────────────────────────────
+def has_dmgt(t_row, b_col):
+    return dmgt_map.get(t_row, {}).get(b_col) is not None
+
+# Metrics
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Tổng số kỳ",        f"{len(df):,}")
 col2.metric("Kỳ mới nhất",       df["ky"].iloc[0])
@@ -69,7 +70,6 @@ st.divider()
 
 tab1, tab2 = st.tabs(["📋 Kết quả", "🏆 Giải thưởng"])
 
-# ── Tab 1: Kết quả ────────────────────────────────────────────────────────────
 with tab1:
     col1, col2 = st.columns([2, 1])
     with col1:
@@ -90,7 +90,6 @@ with tab1:
         hide_index=True,
     )
 
-# ── Tab 2: Giải thưởng ────────────────────────────────────────────────────────
 with tab2:
     col1, col2 = st.columns([2, 1])
     with col1:
@@ -103,74 +102,72 @@ with tab2:
         filtered2 = filtered2[filtered2["ky"].astype(str).str.contains(ky_search2)]
     filtered2 = filtered2.head(limit2)
 
-    # CSS styling
     st.markdown("""
     <style>
     .keno-table { width:100%; border-collapse:collapse; font-size:13px; }
     .keno-table td, .keno-table th {
-        border: 1px solid #ddd; padding: 4px 8px; text-align:right; white-space:nowrap;
+        border: 1px solid #ccc;
+        padding: 3px 8px;
+        text-align: center;
+        white-space: nowrap;
+        background: white;
+        color: black;
     }
-    .keno-table th { background:#222; color:white; text-align:center; }
-    .row-header { background:#4CAF50 !important; color:black !important; font-weight:bold; }
-    .cell-yellow  { background:#FFD700; color:black; }
-    .cell-orange  { background:#FF8C00; color:black; font-weight:bold; }
-    .cell-empty   { background:white; }
-    .col-label    { text-align:left !important; color:#555; font-size:12px; padding-left:24px !important; }
+    .keno-table th {
+        background: #333;
+        color: white;
+        text-align: center;
+    }
+    .row-header td {
+        background: #4CAF50 !important;
+        color: black !important;
+        font-weight: bold;
+        text-align: center !important;
+    }
+    .cell-yellow { background: #FFD700 !important; color: black !important; }
+    .cell-orange { background: #FF8C00 !important; color: black !important; }
+    .cell-white  { background: white !important; }
+    .col-label   { text-align: center !important; color: #666; }
     </style>
     """, unsafe_allow_html=True)
 
-    # Diagonal mask: B10 có T10→T05+T00, B09 có T09→T04+T00, ...
-    # Theo bảng DMGT — ô nào có giá trị thì highlight vàng
-    def has_dmgt(t_row, b_col):
-        return dmgt_map.get(t_row, {}).get(b_col) is not None
-
-    html = '<table class="keno-table">'
-    html += '<tr><th>Ngày</th><th>Kỳ</th><th>BTT</th>'
+    html = '<table class="keno-table"><tr>'
+    html += '<th>Ngày</th><th>Kỳ</th><th>BTT</th>'
     for b in B_COLS:
         html += f'<th>{b.upper()}</th>'
     html += '</tr>'
 
     for _, row in filtered2.iterrows():
-        # Parse tất cả Bxx
-        parsed = {b: parse_bxx(row[b]) for b in B_COLS}
-
-        # Tính tiền từng Bxx
-        tien_bxx = {b: calc_tien_bxx(parsed[b], b) for b in B_COLS}
-        btt = sum(tien_bxx.values())
-
-        # Tìm ô cam: hạng cao nhất có người trúng cho từng Bxx
-        highest = {}
-        for b in B_COLS:
-            for t_num in range(10, -1, -1):
-                t_key = f"T{t_num:02d}"
-                sl = parsed[b].get(t_num, 0)
-                if sl > 0 and has_dmgt(t_key, b):
-                    highest[b] = t_key
-                    break
+        parsed    = {b: parse_bxx(row[b]) for b in B_COLS}
+        tien_bxx  = {b: calc_tien_bxx(parsed[b], b) for b in B_COLS}
+        btt       = sum(tien_bxx.values())
 
         # Dòng header kỳ (xanh lá)
-        html += f'<tr>'
-        html += f'<td class="row-header">{row["ngay"]}</td>'
-        html += f'<td class="row-header">{row["ky"]}</td>'
-        html += f'<td class="row-header">{btt:,.0f}</td>'
+        html += '<tr class="row-header">'
+        html += f'<td>{row["ngay"]}</td><td>{row["ky"]}</td>'
+        html += f'<td>{btt:,.0f}</td>'
         for b in B_COLS:
             val = f'{tien_bxx[b]:,.0f}' if tien_bxx[b] > 0 else ''
-            html += f'<td class="row-header">{val}</td>'
+            html += f'<td>{val}</td>'
         html += '</tr>'
 
         # Dòng chi tiết T10→T01
         for t_num in range(10, 0, -1):
-            t_key = f"T{t_num:02d}"
-            html += '<tr>'
-            html += f'<td></td><td></td>'  # Ngày, Kỳ trống
-            html += f'<td class="col-label">{t_key}</td>'
+            t_key  = f"T{t_num:02d}"
+            is_t05 = (t_num == 5)
+            html  += '<tr>'
+            html  += '<td class="cell-white"></td><td class="cell-white"></td>'
+            html  += f'<td class="col-label">{t_key}</td>'
             for b in B_COLS:
                 sl = parsed[b].get(t_num, 0)
                 if not has_dmgt(t_key, b):
-                    html += '<td class="cell-empty"></td>'
-                elif highest.get(b) == t_key:
+                    # Ô không hợp lệ theo DMGT → trắng
+                    html += '<td class="cell-white"></td>'
+                elif is_t05:
+                    # Hàng T05 → cam
                     html += f'<td class="cell-orange">{sl if sl > 0 else ""}</td>'
                 else:
+                    # Ô hợp lệ → vàng
                     html += f'<td class="cell-yellow">{sl if sl > 0 else ""}</td>'
             html += '</tr>'
 
