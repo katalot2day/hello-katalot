@@ -13,13 +13,19 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS KQKENO (
-            ky        INTEGER PRIMARY KEY,
-            ngay      TEXT,
-            n20       TEXT,
-            chan      INTEGER,
-            le        INTEGER,
-            lon       INTEGER,
-            nho       INTEGER,
+            ky         INTEGER PRIMARY KEY,
+            ngay       TEXT,
+            n20        TEXT,
+            b10        TEXT,
+            b09        TEXT,
+            b08        TEXT,
+            b07        TEXT,
+            b06        TEXT,
+            b05        TEXT,
+            b04        TEXT,
+            b03        TEXT,
+            b02        TEXT,
+            b01        TEXT,
             created_at TEXT
         )
     """)
@@ -37,20 +43,49 @@ def ky_exists(ky_so):
 def save_keno(data):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("""
-        INSERT OR IGNORE INTO KQKENO (ky, ngay, n20, chan, le, lon, nho, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR IGNORE INTO KQKENO
+            (ky, ngay, n20, b10, b09, b08, b07, b06, b05, b04, b03, b02, b01, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        data["ky"],
-        data["ngay"],
-        data["n20"],
-        data["chan"],
-        data["le"],
-        data["lon"],
-        data["nho"],
+        data["ky"], data["ngay"], data["n20"],
+        data["b10"], data["b09"], data["b08"], data["b07"],
+        data["b06"], data["b05"], data["b04"], data["b03"],
+        data["b02"], data["b01"],
         datetime.now().isoformat(),
     ))
     conn.commit()
     conn.close()
+
+
+def parse_prizes(soup):
+    """
+    Parse giai thuong tung loai ve B10->B01.
+    Format luu: "10-00,09-00,08-01,..." (so_trung-so_luong)
+    """
+    prizes = {f"b{i:02d}": "" for i in range(1, 11)}
+    b_keys = ["b10", "b09", "b08", "b07", "b06", "b05", "b04", "b03", "b02", "b01"]
+
+    tables = soup.find_all("table")
+    for idx, table in enumerate(tables[:10]):
+        key = b_keys[idx]
+        rows = table.find_all("tr")
+        parts = []
+        for row in rows:
+            cells = row.find_all("td")
+            if len(cells) >= 2:
+                label = cells[0].get_text(strip=True)
+                value = cells[1].get_text(strip=True)
+                match_so = re.search(r'Trung\s+(\d+)|Trùng\s+(\d+)', label)
+                if match_so:
+                    so_trung = f"{int(match_so.group(1) or match_so.group(2)):02d}"
+                else:
+                    so_trung = "00"
+                match_sl = re.search(r'S[oố]\s*l[uư][oợ]ng[:\s]*(\d+)', value)
+                so_luong = f"{int(match_sl.group(1)):02d}" if match_sl else "00"
+                parts.append(f"{so_trung}-{so_luong}")
+        prizes[key] = ",".join(parts)
+
+    return prizes
 
 
 def fetch_keno(ky_so):
@@ -58,12 +93,12 @@ def fetch_keno(ky_so):
     try:
         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
         if res.status_code != 200:
-            print(f"  ⚠️  Kỳ {ky_so}: HTTP {res.status_code}")
+            print(f"  Ky {ky_so}: HTTP {res.status_code}")
             return None
 
         soup = BeautifulSoup(res.text, "html.parser")
 
-        # Lấy 20 số
+        # Lay 20 so ket qua
         numbers = []
         for tag in soup.find_all(string=re.compile(r'^\d{2}$')):
             n = int(tag.strip())
@@ -72,36 +107,29 @@ def fetch_keno(ky_so):
         numbers = sorted(set(numbers))
 
         if len(numbers) != 20:
-            print(f"  ⚠️  Kỳ {ky_so}: parse được {len(numbers)} số (cần 20)")
+            print(f"  Ky {ky_so}: parse duoc {len(numbers)} so (can 20)")
             return None
 
-        # Lấy ngày giờ
+        # Lay ngay gio
         text = soup.get_text()
         date_match = re.search(r'(\d{1,2}/\d{1,2}/\d{4}\s+\d{2}:\d{2})', text)
         ngay = date_match.group(1) if date_match else ""
 
-        chan = len([n for n in numbers if n % 2 == 0])
-        le   = len([n for n in numbers if n % 2 != 0])
-        lon  = len([n for n in numbers if n > 40])
-        nho  = len([n for n in numbers if n <= 40])
+        prizes = parse_prizes(soup)
 
         return {
             "ky":   ky_so,
             "ngay": ngay,
             "n20":  " ".join(f"{n:02d}" for n in numbers),
-            "chan":  chan,
-            "le":   le,
-            "lon":  lon,
-            "nho":  nho,
+            **prizes,
         }
 
     except Exception as e:
-        print(f"  ❌ Kỳ {ky_so}: {e}")
+        print(f"  Ky {ky_so}: {e}")
         return None
 
 
 def get_latest_ky():
-    """Lấy kỳ mới nhất đã lưu trong DB"""
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT MAX(ky) FROM KQKENO").fetchone()
     conn.close()
@@ -109,7 +137,6 @@ def get_latest_ky():
 
 
 def get_latest_ky_from_site():
-    """Tự động lấy kỳ mới nhất từ ketquaday.vn"""
     try:
         res = requests.get(
             "https://ketquaday.vn/ket-qua-keno",
@@ -119,61 +146,54 @@ def get_latest_ky_from_site():
         matches = re.findall(r'ket-qua-keno-ky-(\d+)', res.text)
         if matches:
             latest = max(int(k) for k in matches)
-            print(f"🌐 Kỳ mới nhất trên site: {latest}")
+            print(f"Ky moi nhat tren site: {latest}")
             return latest
     except Exception as e:
-        print(f"⚠️  Không lấy được kỳ từ site: {e}")
+        print(f"Khong lay duoc ky tu site: {e}")
     return None
 
 
 def run(start_ky, end_ky):
     init_db()
-    print(f"🚀 Fetch kỳ {start_ky} → {end_ky}")
-
-    saved = 0
-    skipped = 0
+    print(f"Fetch ky {start_ky} -> {end_ky}")
+    saved = skipped = 0
 
     for ky in range(start_ky, end_ky + 1):
         if ky_exists(ky):
             skipped += 1
             continue
-
         data = fetch_keno(ky)
         if data:
             save_keno(data)
-            print(f"  ✅ Kỳ {ky} | {data['ngay']} | {data['n20']}")
+            print(f"  OK Ky {ky} | {data['ngay']} | {data['n20']}")
             saved += 1
         else:
-            print(f"  ⏭️  Kỳ {ky}: bỏ qua")
+            print(f"  Bo qua ky {ky}")
+        time.sleep(0.5)
 
-        time.sleep(0.5)  # tránh spam server
-
-    print(f"\n✔️  Xong! Đã lưu: {saved} | Bỏ qua (đã có): {skipped}")
+    print(f"\nXong! Da luu: {saved} | Bo qua (da co): {skipped}")
 
 
 if __name__ == "__main__":
     init_db()
 
-    # Kỳ mới nhất trong DB
-    latest_db = get_latest_ky()
-
-    # Kỳ mới nhất trên site
+    latest_db   = get_latest_ky()
     latest_site = get_latest_ky_from_site()
+
     if not latest_site:
-        print("❌ Không lấy được kỳ mới nhất từ site, dừng lại.")
+        print("Khong lay duoc ky moi nhat tu site, dung lai.")
         exit(1)
 
-    # So sánh DB vs Site
-    print(f"\n📊 So sánh:")
-    print(f"   DB   : {latest_db if latest_db else 'trống'}")
-    print(f"   Site : {latest_site}")
+    print(f"\nSo sanh:")
+    print(f"  DB   : {latest_db if latest_db else 'trong'}")
+    print(f"  Site : {latest_site}")
 
     if latest_db and latest_db >= latest_site:
-        print(f"✅ DB đã cập nhật đầy đủ, không có kỳ mới.")
+        print("DB da cap nhat day du, khong co ky moi.")
         exit(0)
 
     new_count = latest_site - (latest_db if latest_db else 276299)
-    print(f"   Cần fetch thêm: {new_count} kỳ\n")
+    print(f"  Can fetch them: {new_count} ky\n")
 
     start = (latest_db + 1) if latest_db else 276300
     run(start, latest_site)
